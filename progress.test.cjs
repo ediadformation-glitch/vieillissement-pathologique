@@ -1,0 +1,14 @@
+const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict');
+const memory=new Map(),ctx={localStorage:{getItem:k=>memory.get(k)||null,setItem:(k,v)=>memory.set(k,v),removeItem:k=>memory.delete(k)}};
+vm.createContext(ctx);for(const f of ['questions','storage','progress','reference','correction'])vm.runInContext(fs.readFileSync(__dirname+'/../js/'+f+'.js','utf8'),ctx);
+const s=ctx.Store.empty(),P=ctx.Progress;
+assert.equal(P.summarize(s).counts[3],26);assert.equal(P.summarize(s).counts[2],0);
+s.answers[7]=['Calme',''];assert.equal(P.summarize(s).counts[4],1);
+s.blockResults[0]={situations:ctx.Reference.situations.slice(0,8).map((r,i)=>ctx.Engine.evaluate(r,s.answers[i]))};
+assert.equal(P.summarize(s).counts[1],1);assert.equal(P.summarize(s).counts[3],25);assert.equal(P.summarize(s).counts[2],0);
+s.answers[7]=['Calme','Rassurer'];s.blockResults[0]=null;assert.equal(P.summarize(s).counts[4],1);assert.equal(P.strengths(s).length,0);
+assert.deepEqual(Array.from(P.starts),[0,8,16,22,26]);assert.deepEqual([0,7,8,15,16,21,22,25,26].map(P.blockFor),[0,0,1,1,2,2,3,3,4]);
+const legacy={...s,version:1,validated:true,results:{situations:ctx.Reference.situations.map((r,i)=>ctx.Engine.evaluate(r,s.answers[i])),principles:ctx.Engine.evaluatePrinciples(ctx.Reference.principles,s.principles),principleRefs:ctx.Reference.principles,date:'07/10/2026'}};delete legacy.blockResults;
+memory.set('advf-vieillissement-v1',JSON.stringify(legacy));const migrated=ctx.Store.load();assert.equal(migrated.version,2);assert.equal(migrated.answers[7][0],'Calme');assert.equal(migrated.blockResults.length,5);assert.equal(migrated.blockResults[3].situations.length,4);assert.equal(migrated.blockResults[4].principles.assignment.length,4);assert.equal(migrated.validated,undefined);
+const long=ctx.Store.empty();long.answers[0]=['é '.repeat(6000),'','','','Une cinquième idée'];ctx.Store.save(long);assert.equal(ctx.Store.load().answers[0][0].length,12000);assert.equal(ctx.Store.load().answers[0].length,5);
+console.log('Navigation, statuts distincts, migration et réponses longues : contrôles réussis.');
