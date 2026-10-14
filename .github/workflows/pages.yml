@@ -1,0 +1,61 @@
+name: Publier l’application ADVF
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+concurrency:
+  group: pages
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+      - name: Reconstituer les dossiers de l’application
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          const path = require('node:path');
+          const vm = require('node:vm');
+          fs.mkdirSync('_site', {recursive:true});
+          fs.copyFileSync('index.html', '_site/index.html');
+          for (const folder of ['css','js','assets']) {
+            fs.mkdirSync('_site/'+folder, {recursive:true});
+            if (fs.existsSync(folder)) fs.cpSync(folder, '_site/'+folder, {recursive:true});
+          }
+          for (const name of fs.readdirSync('.')) {
+            if (!fs.statSync(name).isFile()) continue;
+            let target;
+            if (name === 'pdf-lib.min.js' || name === 'pdf-lib-LICENSE.md') target = 'js/vendor/'+name;
+            else if (name.endsWith('.js')) { new vm.Script(fs.readFileSync(name,'utf8'), {filename:name}); target = 'js/'+name; }
+            else if (name.endsWith('.css')) target = 'css/'+name;
+            else if (/^s\d{2}\.jpg$/.test(name)) target = 'assets/illustrations/'+name;
+            else if (/\.(jpg|jpeg|png|webp|svg)$/i.test(name)) target = 'assets/'+name;
+            if (target) { fs.mkdirSync(path.dirname('_site/'+target), {recursive:true}); fs.copyFileSync(name, '_site/'+target); }
+          }
+          const html = fs.readFileSync('_site/index.html','utf8');
+          for (const match of html.matchAll(/(?:src|href)=["']([^"']+)["']/g)) {
+            const file = match[1].split('?')[0];
+            if (file.startsWith('#') || /^(https?:|data:)/.test(file)) continue;
+            if (!fs.existsSync('_site/'+file)) throw new Error('Fichier manquant : '+file);
+          }
+          fs.writeFileSync('_site/.nojekyll','');
+          NODE
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: _site
+      - name: Publier
+        id: deployment
+        uses: actions/deploy-pages@v4
+  
